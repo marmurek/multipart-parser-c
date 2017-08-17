@@ -1,4 +1,4 @@
-/* Based on node-formidable by Felix Geisendörfer 
+/* Based on node-formidable by Felix Geisendörfer
  * Igor Afonov - afonov@gmail.com - 2012
  * MIT License - http://www.opensource.org/licenses/mit-license.php
  */
@@ -60,6 +60,8 @@ struct multipart_parser {
 enum state {
   s_uninitialized = 1,
   s_start,
+  s_start_boundary_1,
+  s_start_boundary_2,
   s_start_boundary,
   s_header_field_start,
   s_header_field,
@@ -70,6 +72,8 @@ enum state {
   s_part_data_start,
   s_part_data,
   s_part_data_almost_boundary,
+  s_part_data_boundary_1,
+  s_part_data_boundary_2,
   s_part_data_boundary,
   s_part_data_almost_end,
   s_part_data_end,
@@ -86,7 +90,7 @@ multipart_parser* multipart_parser_init
 
   strcpy(p->multipart_boundary, boundary);
   p->boundary_length = strlen(boundary);
-  
+
   p->lookbehind = (p->multipart_boundary + p->boundary_length + 1);
 
   p->index = 0;
@@ -121,9 +125,15 @@ size_t multipart_parser_execute(multipart_parser* p, const char *buf, size_t len
       case s_start:
         multipart_log("s_start");
         p->index = 0;
-        p->state = s_start_boundary;
+        p->state = s_start_boundary_1;
 
       /* fallthrough */
+      case s_start_boundary_1:
+	  	p->state = s_start_boundary_2;
+	  	break;
+	  case s_start_boundary_2:
+	  	p->state = s_start_boundary;
+	  	break;
       case s_start_boundary:
         multipart_log("s_start_boundary");
         if (p->index == p->boundary_length) {
@@ -236,7 +246,7 @@ size_t multipart_parser_execute(multipart_parser* p, const char *buf, size_t len
       case s_part_data_almost_boundary:
         multipart_log("s_part_data_almost_boundary");
         if (c == LF) {
-            p->state = s_part_data_boundary;
+            p->state = s_part_data_boundary_1;
             p->lookbehind[1] = LF;
             p->index = 0;
             break;
@@ -245,7 +255,12 @@ size_t multipart_parser_execute(multipart_parser* p, const char *buf, size_t len
         p->state = s_part_data;
         mark = i --;
         break;
-
+      case s_part_data_boundary_1:
+        p->state = s_part_data_boundary_2;
+        break;
+      case s_part_data_boundary_2:
+        p->state = s_part_data_boundary;
+        break;
       case s_part_data_boundary:
         multipart_log("s_part_data_boundary");
         if (p->multipart_boundary[p->index] != c) {
@@ -272,7 +287,7 @@ size_t multipart_parser_execute(multipart_parser* p, const char *buf, size_t len
             break;
         }
         return i;
-   
+
       case s_part_data_final_hyphen:
         multipart_log("s_part_data_final_hyphen");
         if (c == '-') {
