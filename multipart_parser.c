@@ -1,5 +1,6 @@
 /* Based on node-formidable by Felix Geisendörfer
  * Igor Afonov - afonov@gmail.com - 2012
+ * terry wu - terry.wuhao@gmail.com - 2017
  * MIT License - http://www.opensource.org/licenses/mit-license.php
  */
 

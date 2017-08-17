@@ -1,5 +1,6 @@
 /* Based on node-formidable by Felix Geisendörfer
  * Igor Afonov - afonov@gmail.com - 2012
+ * terry wu - terry.wuhao@gmail.com - 2017
  * MIT License - http://www.opensource.org/licenses/mit-license.php
  */
 #ifndef _multipart_parser_h
@@ -34,8 +35,8 @@ struct multipart_parser_settings {
   multipart_notify_cb on_headers_complete;
   multipart_notify_cb on_part_data_end;
   multipart_notify_cb on_body_end;
-  char   boundary[128];
   size_t boundary_length;
+  char   boundary[64]; // place at rear to allow larger boundaries
 };
 
 void multipart_parser_init();
