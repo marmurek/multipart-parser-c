@@ -7,20 +7,22 @@
 
 Tested as part of [Cosmonaut](https://github.com/iafonov/cosmonaut) HTTP server.
 
-Implementation based on [node-formidable](https://github.com/felixge/node-formidable) by [Felix Geisendörfer](https://github.com/felixge).
+Implementation based on [node-formidable](https://github.com/felixge/node-formidable)
 
-Inspired by [http-parser](https://github.com/joyent/http-parser) by [Ryan Dahl](https://github.com/ry).
+Inspired by [http-parser](https://github.com/nodejs/http-parser)
 
 ### Usage (C)
 This parser library works with several callbacks, which the user may set up at application initialization time.
 
 ```c
-multipart_parser_settings callbacks;
+multipart_parser_settings settings;
 
-memset(&callbacks, 0, sizeof(multipart_parser_settings));
+memset(&settings, 0, sizeof(multipart_parser_settings));
 
-callbacks.on_header_field = read_header_name;
-callbacks.on_header_value = read_header_value;
+settings.on_header_field = read_header_name;
+settings.on_header_value = read_header_value;
+settings.boundary_length = 38;
+std::memcpy(settings.boundary, "--------------------------boundary1234", 38);
 ```
 
 These functions must match the signatures defined in the multipart-parser header file.  For this simple example, we'll just use two of the available callbacks to print all headers the library finds in multipart messages.
@@ -44,9 +46,9 @@ int read_header_value(multipart_parser* p, const char *at, size_t length)
 When a message arrives, callers must parse the multipart boundary from the **Content-Type** header (see the [RFC](http://tools.ietf.org/html/rfc2387#section-5.1) for more information and examples), and then execute the parser.
 
 ```c
-multipart_parser* parser = multipart_parser_init(boundary, &callbacks);
-multipart_parser_execute(parser, body, length);
-multipart_parser_free(parser);
+multipart_parser parser;
+multipart_parser_init(&parser, &settings);
+multipart_parser_execute(&parser, &settings, body, length);
 ```
 
 ### Usage (C++)
@@ -58,34 +60,29 @@ class MultipartConsumer
 public:
     MultipartConsumer(const std::string& boundary)
     {
-        memset(&m_callbacks, 0, sizeof(multipart_parser_settings));
-        m_callbacks.on_header_field = ReadHeaderName;
-        m_callbacks.on_header_value = ReadHeaderValue;
-
-        m_parser = multipart_parser_init(boundary.c_str(), &m_callbacks);
-        multipart_parser_set_data(m_parser, this);
-    }
-
-    ~MultipartConsumer()
-    {
-        multipart_parser_free(m_parser);
+        memset(&m_settings, 0, sizeof(multipart_parser_settings));
+        m_settings.on_header_field = ReadHeaderName;
+        m_settings.on_header_value = ReadHeaderValue;
+		std::memcpy(m_settings.boundary, boundary.c_str(), boundary.length())
+        multipart_parser_init(&m_parser, &m_settings);
+        m_parser->data = this;
     }
 
     int CountHeaders(const std::string& body)
     {
-        multipart_parser_execute(m_parser, body.c_str(), body.size());
+        multipart_parser_execute(&m_parser, &m_settings, body.c_str(), body.size());
         return m_headers;
     }
 
 private:
     static int ReadHeaderName(multipart_parser* p, const char *at, size_t length)
     {
-        MultipartConsumer* me = (MultipartConsumer*)multipart_parser_get_data(p);
+        MultipartConsumer* me = (MultipartConsumer*)p->data;
         me->m_headers++;
     }
 
-    multipart_parser* m_parser;
-    multipart_parser_settings m_callbacks;
+    multipart_parser m_parser;
+    multipart_parser_settings m_settings;
     int m_headers;
 };
 ```
@@ -96,3 +93,4 @@ private:
 * [Jay Miller](http://www.cryptofreak.org)
 
 © 2012 [Igor Afonov](http://iafonov.github.com)
+@ 2017 [Terry Wu](http://blog.terrywh.net)
