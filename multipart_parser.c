@@ -23,8 +23,8 @@ static void multipart_log(const char * format, ...)
 
 #define NOTIFY_CB(FOR)                                                 \
 do {                                                                   \
-  if (p->settings->on_##FOR) {                                         \
-    if (p->settings->on_##FOR(p) != 0) {                               \
+  if (settings->on_##FOR) {                                         \
+    if (settings->on_##FOR(p) != 0) {                               \
       return i;                                                        \
     }                                                                  \
   }                                                                    \
@@ -32,8 +32,8 @@ do {                                                                   \
 
 #define EMIT_DATA_CB(FOR, ptr, len)                                    \
 do {                                                                   \
-  if (p->settings->on_##FOR) {                                         \
-    if (p->settings->on_##FOR(p, ptr, len) != 0) {                     \
+  if (settings->on_##FOR) {                                         \
+    if (settings->on_##FOR(p, ptr, len) != 0) {                     \
       return i;                                                        \
     }                                                                  \
   }                                                                    \
@@ -42,20 +42,6 @@ do {                                                                   \
 
 #define LF 10
 #define CR 13
-
-struct multipart_parser {
-  void * data;
-
-  size_t index;
-  size_t boundary_length;
-
-  unsigned char state;
-
-  const multipart_parser_settings* settings;
-
-  char* lookbehind;
-  char multipart_boundary[1];
-};
 
 enum state {
   s_uninitialized = 1,
@@ -81,27 +67,13 @@ enum state {
   s_end
 };
 
-multipart_parser* multipart_parser_init
-    (const char *boundary, const multipart_parser_settings* settings) {
+void multipart_parser_init
+    (multipart_parser* parser, const multipart_parser_settings* settings) {
 
-  multipart_parser* p = malloc(sizeof(multipart_parser) +
-                               strlen(boundary) +
-                               strlen(boundary) + 9);
+  parser->lookbehind = (char*)(settings->boundary + settings->boundary_length + 1);
 
-  strcpy(p->multipart_boundary, boundary);
-  p->boundary_length = strlen(boundary);
-
-  p->lookbehind = (p->multipart_boundary + p->boundary_length + 1);
-
-  p->index = 0;
-  p->state = s_start;
-  p->settings = settings;
-
-  return p;
-}
-
-void multipart_parser_free(multipart_parser* p) {
-  free(p);
+  parser->index = 0;
+  parser->state = s_start;
 }
 
 void multipart_parser_set_data(multipart_parser *p, void *data) {
@@ -112,7 +84,7 @@ void *multipart_parser_get_data(multipart_parser *p) {
     return p->data;
 }
 
-size_t multipart_parser_execute(multipart_parser* p, const char *buf, size_t len) {
+size_t multipart_parser_execute(multipart_parser* p, const multipart_parser_settings* settings, const char *buf, size_t len) {
   size_t i = 0;
   size_t mark = 0;
   char c, cl;
@@ -136,13 +108,13 @@ size_t multipart_parser_execute(multipart_parser* p, const char *buf, size_t len
 	  	break;
       case s_start_boundary:
         multipart_log("s_start_boundary");
-        if (p->index == p->boundary_length) {
+        if (p->index == settings->boundary_length) {
           if (c != CR) {
             return i;
           }
           p->index++;
           break;
-        } else if (p->index == (p->boundary_length + 1)) {
+        } else if (p->index == (settings->boundary_length + 1)) {
           if (c != LF) {
             return i;
           }
@@ -151,7 +123,7 @@ size_t multipart_parser_execute(multipart_parser* p, const char *buf, size_t len
           p->state = s_header_field_start;
           break;
         }
-        if (c != p->multipart_boundary[p->index]) {
+        if (c != settings->boundary[p->index]) {
           return i;
         }
         p->index++;
@@ -263,14 +235,14 @@ size_t multipart_parser_execute(multipart_parser* p, const char *buf, size_t len
         break;
       case s_part_data_boundary:
         multipart_log("s_part_data_boundary");
-        if (p->multipart_boundary[p->index] != c) {
+        if (settings->boundary[p->index] != c) {
           EMIT_DATA_CB(part_data, p->lookbehind, 2 + p->index);
           p->state = s_part_data;
           mark = i --;
           break;
         }
         p->lookbehind[2 + p->index] = c;
-        if ((++ p->index) == p->boundary_length) {
+        if ((++ p->index) == settings->boundary_length) {
             NOTIFY_CB(part_data_end);
             p->state = s_part_data_almost_end;
         }
