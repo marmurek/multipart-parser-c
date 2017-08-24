@@ -36,7 +36,7 @@ struct multipart_parser_settings {
   multipart_notify_cb on_part_data_end;
   multipart_notify_cb on_body_end;
   size_t boundary_length;
-  char   boundary[64]; // place at rear to allow larger boundaries
+  char   boundary[64]; /* place at rear for larger boundaries */
 };
 
 void multipart_parser_init();
