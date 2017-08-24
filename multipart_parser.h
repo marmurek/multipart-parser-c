@@ -39,7 +39,7 @@ struct multipart_parser_settings {
   char   boundary[64]; /* place at rear for larger boundaries */
 };
 
-void multipart_parser_init();
+void multipart_parser_init(multipart_parser* parser, const multipart_parser_settings* settings);
 #define multipart_parser_free(p) (void)
 
 size_t multipart_parser_execute(multipart_parser* p, const multipart_parser_settings* settings, const char *buf, size_t len);
