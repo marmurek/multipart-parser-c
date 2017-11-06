@@ -1,11 +1,12 @@
-CFLAGS?=-std=c89 -ansi -pedantic -O0 -g -Wall -fPIC 
+CFLAGS?= -O3
 
-default: multipart_parser.o
+all: multipart_parser.o
 
 multipart_parser.o: multipart_parser.c multipart_parser.h
 
+%.o: %.c
+	${CC} -std=c89 ${CFLAGS} -ansi -pedantic -Wall -fPIC -c $^ -o $@
 solib: multipart_parser.o
-	$(CC) -shared -Wl,-soname,libmultipart.so -o libmultipart.so multipart_parser.o
-
+	${CC} -shared -Wl,-soname,libmultipart.so -o libmultipart.so multipart_parser.o
 clean:
 	rm -f *.o *.so
