@@ -2,7 +2,7 @@ CFLAGS?= -O3
 
 all: multipart_parser.o
 
-multipart_parser.o: multipart_parser.c multipart_parser.h
+multipart_parser.o: multipart_parser.c
 
 %.o: %.c
 	${CC} -std=c89 ${CFLAGS} -ansi -pedantic -Wall -fPIC -c $^ -o $@
