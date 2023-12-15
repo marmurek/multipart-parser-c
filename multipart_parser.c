@@ -102,10 +102,16 @@ size_t multipart_parser_execute(multipart_parser* p, const multipart_parser_sett
 
       /* fallthrough */
       case s_start_boundary_1:
-	  	p->state = s_start_boundary_2;
+        if(c == '-')
+        {
+          p->state = s_start_boundary_2;
+        }
 	  	break;
-	  case s_start_boundary_2:
-	  	p->state = s_start_boundary;
+	    case s_start_boundary_2:
+        if(c == '-')
+        {
+          p->state = s_start_boundary;
+        }
 	  	break;
       case s_start_boundary:
         multipart_log("s_start_boundary");
@@ -221,7 +227,6 @@ size_t multipart_parser_execute(multipart_parser* p, const multipart_parser_sett
         if (c == LF) {
             p->state = s_part_data_boundary_1;
             p->lookbehind[1] = LF;
-            p->index = 0;
             break;
         }
         EMIT_DATA_CB(part_data, p->lookbehind, 1);
@@ -229,10 +234,26 @@ size_t multipart_parser_execute(multipart_parser* p, const multipart_parser_sett
         mark = i --;
         break;
       case s_part_data_boundary_1:
-        p->state = s_part_data_boundary_2;
+        if(c == '-')
+        {
+          p->state = s_part_data_boundary_2;
+          p->lookbehind[2] = c;
+          break;
+        }
+        EMIT_DATA_CB(part_data, p->lookbehind, 2);
+        p->state = s_part_data;
+        mark = i --;
         break;
       case s_part_data_boundary_2:
-        p->state = s_part_data_boundary;
+        if(c == '-')
+        {
+          p->state = s_part_data_boundary;
+          p->index = 0;
+          break;
+        }
+        EMIT_DATA_CB(part_data, p->lookbehind, 3);
+        p->state = s_part_data;
+        mark = i --;
         break;
       case s_part_data_boundary:
         multipart_log("s_part_data_boundary");
