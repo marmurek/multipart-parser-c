@@ -24,8 +24,8 @@ static void multipart_log(const char * format, ...)
 
 #define NOTIFY_CB(FOR)                                                 \
 do {                                                                   \
-  if (settings->on_##FOR) {                                         \
-    if (settings->on_##FOR(p) != 0) {                               \
+  if (callbacks->on_##FOR) {                                         \
+    if (callbacks->on_##FOR(p) != 0) {                               \
       return i;                                                        \
     }                                                                  \
   }                                                                    \
@@ -33,8 +33,8 @@ do {                                                                   \
 
 #define EMIT_DATA_CB(FOR, ptr, len)                                    \
 do {                                                                   \
-  if (settings->on_##FOR) {                                         \
-    if (settings->on_##FOR(p, ptr, len) != 0) {                     \
+  if (callbacks->on_##FOR) {                                         \
+    if (callbacks->on_##FOR(p->context, ptr, len) != 0) {                     \
       return i;                                                        \
     }                                                                  \
   }                                                                    \
@@ -47,9 +47,9 @@ do {                                                                   \
 enum state {
   s_uninitialized = 1,
   s_start,
-  s_start_boundary_1,
-  s_start_boundary_2,
   s_start_boundary,
+  s_preamble,
+  s_preamble_almost_boundary,
   s_header_field_start,
   s_header_field,
   s_headers_almost_done,
@@ -59,33 +59,27 @@ enum state {
   s_part_data_start,
   s_part_data,
   s_part_data_almost_boundary,
-  s_part_data_boundary_1,
-  s_part_data_boundary_2,
   s_part_data_boundary,
   s_part_data_almost_end,
-  s_part_data_end,
+  s_part_complete,
   s_part_data_final_hyphen,
   s_end
 };
 
 void multipart_parser_init
-    (multipart_parser* parser, const multipart_parser_settings* settings) {
+    (multipart_parser* parser, const char* boundary, void* context) {
 
-  parser->lookbehind = (char*)(settings->boundary + settings->boundary_length + 1);
+  size_t bufferSize = (sizeof(parser->boundary) / sizeof(parser->boundary[0]));
+  parser->boundary_length = snprintf(parser->boundary, bufferSize, "--%s", boundary);
+
+  parser->lookbehind = (char*)(parser->boundary + parser->boundary_length + 1);
 
   parser->index = 0;
   parser->state = s_start;
+  parser->context = context;
 }
 
-void multipart_parser_set_data(multipart_parser *p, void *data) {
-    p->data = data;
-}
-
-void *multipart_parser_get_data(multipart_parser *p) {
-    return p->data;
-}
-
-size_t multipart_parser_execute(multipart_parser* p, const multipart_parser_settings* settings, const char *buf, size_t len) {
+size_t multipart_parser_process(multipart_parser* p, const multipart_parser_callbacks* callbacks, const char *buf, size_t len) {
   size_t i = 0;
   size_t mark = 0;
   char c, cl;
@@ -98,30 +92,19 @@ size_t multipart_parser_execute(multipart_parser* p, const multipart_parser_sett
       case s_start:
         multipart_log("s_start");
         p->index = 0;
-        p->state = s_start_boundary_1;
+        NOTIFY_CB(body_begin);
+        p->state = s_start_boundary;
 
       /* fallthrough */
-      case s_start_boundary_1:
-        if(c == '-')
-        {
-          p->state = s_start_boundary_2;
-        }
-	  	break;
-	    case s_start_boundary_2:
-        if(c == '-')
-        {
-          p->state = s_start_boundary;
-        }
-	  	break;
       case s_start_boundary:
         multipart_log("s_start_boundary");
-        if (p->index == settings->boundary_length) {
+        if (p->index == p->boundary_length) {
           if (c != CR) {
             return i;
           }
           p->index++;
           break;
-        } else if (p->index == (settings->boundary_length + 1)) {
+        } else if (p->index == (p->boundary_length + 1)) {
           if (c != LF) {
             return i;
           }
@@ -130,10 +113,35 @@ size_t multipart_parser_execute(multipart_parser* p, const multipart_parser_sett
           p->state = s_header_field_start;
           break;
         }
-        if (c != settings->boundary[p->index]) {
-          return i;
+
+        /* if starting boundaru doesn't match, assume we are reading the preamble */
+        if (c != p->boundary[p->index]) {
+          p->index = 0;
+
+          if (c == CR) { /* smallest preable is CR LF */
+
+            p->state = s_preamble_almost_boundary;
+          } else {
+            p->state = s_preamble;
+          }
+          break;
         }
+
         p->index++;
+        break;
+
+      case s_preamble:
+        if (c == CR) {
+            p->state = s_preamble_almost_boundary;
+        }
+        break;
+
+      case s_preamble_almost_boundary:
+        if(c == LF) {
+          p->state = s_start_boundary;
+        } else {
+          p->state = s_preamble;
+        }
         break;
 
       case s_header_field_start:
@@ -225,46 +233,26 @@ size_t multipart_parser_execute(multipart_parser* p, const multipart_parser_sett
       case s_part_data_almost_boundary:
         multipart_log("s_part_data_almost_boundary");
         if (c == LF) {
-            p->state = s_part_data_boundary_1;
+            p->state = s_part_data_boundary;
             p->lookbehind[1] = LF;
+            p->index = 0;
             break;
         }
         EMIT_DATA_CB(part_data, p->lookbehind, 1);
         p->state = s_part_data;
         mark = i --;
         break;
-      case s_part_data_boundary_1:
-        if(c == '-')
-        {
-          p->state = s_part_data_boundary_2;
-          p->lookbehind[2] = c;
-          break;
-        }
-        EMIT_DATA_CB(part_data, p->lookbehind, 2);
-        p->state = s_part_data;
-        mark = i --;
-        break;
-      case s_part_data_boundary_2:
-        if(c == '-')
-        {
-          p->state = s_part_data_boundary;
-          p->index = 0;
-          break;
-        }
-        EMIT_DATA_CB(part_data, p->lookbehind, 3);
-        p->state = s_part_data;
-        mark = i --;
-        break;
+
       case s_part_data_boundary:
         multipart_log("s_part_data_boundary");
-        if (settings->boundary[p->index] != c) {
+        if (p->boundary[p->index] != c) {
           EMIT_DATA_CB(part_data, p->lookbehind, 2 + p->index);
           p->state = s_part_data;
           mark = i --;
           break;
         }
         p->lookbehind[2 + p->index] = c;
-        if ((++ p->index) == settings->boundary_length) {
+        if ((++ p->index) == p->boundary_length) {
             NOTIFY_CB(part_data_end);
             p->state = s_part_data_almost_end;
         }
@@ -277,11 +265,11 @@ size_t multipart_parser_execute(multipart_parser* p, const multipart_parser_sett
             break;
         }
         if (c == CR) {
-            p->state = s_part_data_end;
+            p->state = s_part_complete;
             break;
         }
         return i;
-
+   
       case s_part_data_final_hyphen:
         multipart_log("s_part_data_final_hyphen");
         if (c == '-') {
@@ -291,8 +279,8 @@ size_t multipart_parser_execute(multipart_parser* p, const multipart_parser_sett
         }
         return i;
 
-      case s_part_data_end:
-        multipart_log("s_part_data_end");
+      case s_part_complete:
+        multipart_log("s_part_complete");
         if (c == LF) {
             p->state = s_header_field_start;
             NOTIFY_CB(part_data_begin);
